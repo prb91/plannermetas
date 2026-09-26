@@ -18,3 +18,7 @@ View your app in AI Studio: https://ai.studio/apps/906a6645-d94f-434d-a36b-f9457
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+
+## Imagens
+As imagens das premiações ficam em `public/assets/` para serem servidas corretamente pelo Vite/Vercel. As URLs usadas pelo sistema são relativas à raiz (`/assets/...`).
