@@ -378,13 +378,13 @@ export const ConvencaoRJView: React.FC<ConvencaoRJViewProps> = ({
               <span>Campanha Oficial</span>
             </div>
 
-            {/* Badge Bottom Right */}
-            <div className="absolute bottom-3 right-3 bg-[#ff5e36] text-white px-3 py-1 rounded-lg text-xs font-bold font-mono shadow-sm">
-              Meta: {formatCurrency(selectedCampanha.meta)}
-            </div>
           </div>
 
           <div className="p-5 space-y-3">
+            <p className="text-[11px] text-slate-400 italic">
+              ⓘ * As imagens do evento e da premiação são meramente ilustrativas.
+            </p>
+
             <div>
               <h3 className="text-lg font-bold text-slate-900">
                 {selectedCampanha.premio}
@@ -571,9 +571,8 @@ export const ConvencaoRJView: React.FC<ConvencaoRJViewProps> = ({
         </div>
       )}
 
-      {/* Rodapé Informativo (Screenshot 3) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-400 px-1 pt-1">
-        <span className="italic">ⓘ * As imagens do evento e da premiação são meramente ilustrativas.</span>
+      {/* Rodapé Informativo */}
+      <div className="flex justify-end text-[11px] text-slate-400 px-1 pt-1">
         <span>Convenção RJ • Circuito Oficial de Premiações B91</span>
       </div>
     </div>
