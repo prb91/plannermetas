@@ -1,34 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import confetti from 'canvas-confetti';
-import { 
-  Palmtree, 
-  Target, 
-  Calendar, 
-  AlertTriangle, 
-  FileSpreadsheet, 
-  Printer, 
+import React, { useState } from 'react';
+import {
+  Palmtree,
+  Printer,
   RotateCcw,
-  Info,
-  FileDown
+  BookOpen,
 } from 'lucide-react';
-import { CAMPANHAS, RECORRENCIA_PADRAO } from '../data/campanhas';
-import { 
-  formatMoneyNum, 
-  formatPercentage, 
-  parseValue, 
-  parsePercentage, 
-  gerarMesesDinamicos,
-  exportToCSV 
-} from '../utils/formatters';
-import { ConvencaoRJData, CronogramaRowRJ } from '../types';
 import { CurrencyInput } from './CurrencyInput';
-import { PercentageInput } from './PercentageInput';
+import { PercentInput } from './PercentInput';
+import {
+  CAMPANHAS_OFICIAIS,
+  formatCurrency,
+  formatPercent,
+  parseValue,
+  parsePercentage,
+  gerarMesesDinamicos,
+} from '../data/campaigns';
+import confetti from 'canvas-confetti';
 
 interface ConvencaoRJViewProps {
   initialTpv?: number;
   initialRecorrencia?: number;
   initialCampanhaId?: number;
-  onOpenReport?: (data: ConvencaoRJData) => void;
+  onOpenReport?: (data: any) => void;
+  onOpenHelp?: () => void;
 }
 
 export const ConvencaoRJView: React.FC<ConvencaoRJViewProps> = ({
@@ -36,538 +30,551 @@ export const ConvencaoRJView: React.FC<ConvencaoRJViewProps> = ({
   initialRecorrencia,
   initialCampanhaId = 0,
   onOpenReport,
+  onOpenHelp,
 }) => {
-  // Cycle calculations
   const hoje = new Date();
-  const mesAtual = hoje.getMonth() + 1; // 1-12
+  const mesAtual = hoje.getMonth() + 1;
   const anoAtual = hoje.getFullYear();
   const anoConvencao = mesAtual >= 7 ? anoAtual + 1 : anoAtual;
-  const dataLimite = new Date(anoConvencao, 5, 1); // June (month 5 in 0-index)
-  let calcMesesDisponiveis = (dataLimite.getFullYear() - hoje.getFullYear()) * 12 + (dataLimite.getMonth() - hoje.getMonth()) + 1;
-  if (calcMesesDisponiveis < 1) calcMesesDisponiveis = 1;
+  const anoAlvoAbril = mesAtual >= 4 ? anoAtual + 1 : anoAtual;
 
-  const [tpvAtualStr, setTpvAtualStr] = useState<string>(initialTpv ? initialTpv.toString() : '');
-  const [recorrenciaStr, setRecorrenciaStr] = useState<string>(initialRecorrencia ? (initialRecorrencia * 100).toFixed(2).replace('.', ',') + '%' : '');
+  let mesesAteAbril = (anoAlvoAbril - anoAtual) * 12 + (4 - mesAtual);
+  if (mesesAteAbril <= 0) mesesAteAbril = 1;
+
+  const [tpvStr, setTpvStr] = useState<string>(initialTpv ? initialTpv.toString() : '');
+  const [recorrenciaStr, setRecorrenciaStr] = useState<string>(
+    initialRecorrencia
+      ? (initialRecorrencia * 100).toFixed(2).replace('.', ',') + '%'
+      : ''
+  );
+  const [crescimentoPersonalizadoStr, setCrescimentoPersonalizadoStr] = useState<string>('');
+  const [tpvError, setTpvError] = useState(false);
   const [campanhaId, setCampanhaId] = useState<number>(initialCampanhaId);
-  const [resultado, setResultado] = useState<ConvencaoRJData | null>(null);
+  const [result, setResult] = useState<any>(null);
 
-  const campanhaSelecionada = CAMPANHAS.find(c => c.id === campanhaId) || CAMPANHAS[0];
+  const selectedCampanha =
+    CAMPANHAS_OFICIAIS.find((c) => c.id === campanhaId) || CAMPANHAS_OFICIAIS[0];
 
   const handleCalcular = () => {
-    const tpv = parseValue(tpvAtualStr);
+    const tpv = parseValue(tpvStr);
     const rec = parsePercentage(recorrenciaStr);
+    const crescCustom = parseValue(crescimentoPersonalizadoStr);
 
-    if (tpv <= 0) {
-      setResultado(null);
+    if (!tpvStr || tpv <= 0) {
+      setTpvError(true);
+      setResult(null);
       return;
     }
+    setTpvError(false);
 
-    const meta = campanhaSelecionada.meta;
-    const jaAtingida = tpv >= meta;
+    const meta = selectedCampanha.meta;
+    const jaAtingiu = tpv >= meta;
 
-    if (jaAtingida) {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
+    if (jaAtingiu) {
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
     }
 
     const faltam = Math.max(0, meta - tpv);
-    const crescimentoNecessario = faltam / calcMesesDisponiveis;
-    const percentualCrescimento = tpv > 0 ? (crescimentoNecessario / tpv) * 100 : 0;
 
-    let viabilidadeLabel = "🟢 Alcançável";
-    let viabilidadeTipo: 'alcancavel' | 'desafiador' | 'agressivo' = 'alcancavel';
-    let viabilidadeCor = "text-emerald-700 bg-emerald-50 border-emerald-200";
+    // Gerar cronograma até Julho do ano da Convenção (fechamento oficial)
+    const totalMesesCronograma = Math.max(
+      mesesAteAbril + 4,
+      (anoConvencao - anoAtual) * 12 + (7 - mesAtual) + 1
+    );
+    const nomesMeses = gerarMesesDinamicos(totalMesesCronograma);
+    const cronograma: any[] = [];
 
-    if (percentualCrescimento <= 15) {
-      viabilidadeLabel = "🟢 Alcançável (até 15% a.m.)";
-      viabilidadeTipo = 'alcancavel';
-      viabilidadeCor = "text-emerald-700 bg-emerald-50 border-emerald-200";
-    } else if (percentualCrescimento <= 30) {
-      viabilidadeLabel = "🟡 Desafiador (15% a 30% a.m.)";
-      viabilidadeTipo = 'desafiador';
-      viabilidadeCor = "text-amber-700 bg-amber-50 border-amber-200";
+    // Localizar o mês de Abril do próximo ano para calibrar o ritmo necessário
+    const idxAbril = nomesMeses.findIndex((m) => m.startsWith('04/'));
+    const mesesParaAbril = idxAbril !== -1 ? idxAbril + 1 : mesesAteAbril;
+
+    // Ritmo de crescimento mensal:
+    // Se o usuário informou um ritmo customizado, utiliza-o.
+    // Se não informou:
+    // - Se ainda não bateu a meta, calcula o necessário para bater em Abril: faltam / mesesParaAbril
+    // - Se já bateu a meta, projeta expansão saudável contínua (mínimo de R$ 50.000 ou 5% ao mês)
+    let crescimentoMensal: number;
+    if (crescCustom > 0) {
+      crescimentoMensal = crescCustom;
+    } else if (jaAtingiu) {
+      crescimentoMensal = Math.max(50000, Math.round((tpv * 0.05) / 10000) * 10000);
     } else {
-      viabilidadeLabel = "🔴 Agressivo (> 30% a.m.)";
-      viabilidadeTipo = 'agressivo';
-      viabilidadeCor = "text-rose-700 bg-rose-50 border-rose-200";
+      crescimentoMensal = faltam > 0 ? faltam / mesesParaAbril : 0;
     }
 
-    const meses = gerarMesesDinamicos(8);
-    const cronograma: CronogramaRowRJ[] = [];
-    let mesesValidosSequencia = 0;
+    const percentualCrescimento = tpv > 0 ? (crescimentoMensal / tpv) * 100 : 0;
 
-    for (let i = 0; i < 8; i++) {
-      let tpvDoMes: number;
-      if (i === 0) {
-        tpvDoMes = tpv + crescimentoNecessario;
-      } else if (i < calcMesesDisponiveis) {
-        tpvDoMes = tpv + (crescimentoNecessario * (i + 1));
-      } else {
-        tpvDoMes = meta;
-      }
+    let viabilidadeLabel = '🟢 Alcançável';
+    let viabilidadeTipo = 'alcancavel';
+    let viabilidadeCor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
 
-      const remuneracao = tpvDoMes * rec;
-      const crescimentoMes = i < calcMesesDisponiveis ? crescimentoNecessario : 0;
-      const mesNumero = parseInt(meses[i].split('/')[0]);
-      const anoReferencia = mesNumero <= 7 ? anoConvencao : anoConvencao + 1;
+    if (jaAtingiu) {
+      viabilidadeLabel = '🟢 Elegível (Meta Já Superada)';
+      viabilidadeTipo = 'alcancavel';
+      viabilidadeCor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+    } else if (percentualCrescimento <= 15) {
+      viabilidadeLabel = '🟢 Alcançável (até 15% a.m.)';
+      viabilidadeTipo = 'alcancavel';
+      viabilidadeCor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+    } else if (percentualCrescimento <= 30) {
+      viabilidadeLabel = '🟡 Desafiador (15% a 30% a.m.)';
+      viabilidadeTipo = 'desafiador';
+      viabilidadeCor = 'text-amber-700 bg-amber-50 border-amber-200';
+    } else {
+      viabilidadeLabel = '🔴 Agressivo (> 30% a.m.)';
+      viabilidadeTipo = 'agressivo';
+      viabilidadeCor = 'text-rose-700 bg-rose-50 border-rose-200';
+    }
 
-      if (tpvDoMes >= meta) {
-        mesesValidosSequencia++;
-      } else {
-        mesesValidosSequencia = 0;
-      }
+    // Preenche crescimento, TPV atingido e remuneração continuamente todos os meses
+    for (let q = 0; q < totalMesesCronograma; q++) {
+      const cresc = crescimentoMensal;
+      const tpvSimulado = tpv + crescimentoMensal * (q + 1);
+      const remun = tpvSimulado * rec;
+      const numMes = parseInt(nomesMeses[q].split('/')[0], 10);
+      const anoRef = numMes <= 7 ? anoConvencao : anoConvencao - 1;
 
-      let status = '';
-      let statusTipo: CronogramaRowRJ['statusTipo'] = 'construcao';
+      let statusTexto = '';
+      let statusTipo = 'construcao';
 
-      if (mesNumero === 7) {
-        if (mesesValidosSequencia >= 3) {
-          status = '🏆 Elegível (Final)';
+      if (numMes === 7) {
+        // Julho: Fechamento final oficial
+        if (tpvSimulado >= meta) {
+          statusTexto = '🏆 Elegível (Final)';
           statusTipo = 'elegivel_final';
         } else {
-          status = '❌ Não elegível (Final)';
+          statusTexto = '❌ Não elegível (Final)';
           statusTipo = 'nao_elegivel';
         }
-      } else if (mesNumero >= 4 && mesNumero <= 6) {
-        if (tpvDoMes < meta) {
-          status = '❌ Não elegível';
-          statusTipo = 'nao_elegivel';
-        } else if (mesesValidosSequencia < 3) {
-          status = '⚠️ Validação';
-          statusTipo = 'validacao';
-        } else {
-          status = '🏆 Elegível';
+      } else if (numMes >= 4 && numMes <= 6) {
+        // Abril a Junho: Período oficial de qualificação / elegibilidade
+        if (tpvSimulado >= meta) {
+          statusTexto = '🏆 Elegível';
           statusTipo = 'elegivel';
+        } else {
+          statusTexto = '❌ Não elegível';
+          statusTipo = 'nao_elegivel';
         }
       } else {
-        if (tpvDoMes < meta) {
-          status = '⏳ Construção';
-          statusTipo = 'construcao';
-        } else {
-          status = '⚠️ Pré-validação';
+        if (tpvSimulado >= meta) {
+          statusTexto = '⚠️ Pré-validação';
           statusTipo = 'pre_validacao';
+        } else {
+          statusTexto = '⏳ Construção';
+          statusTipo = 'construcao';
         }
       }
 
       cronograma.push({
-        mes: meses[i],
-        mesNumero,
+        mes: nomesMeses[q],
+        mesNumero: numMes,
         tpvMeta: meta,
-        crescimento: crescimentoMes,
-        tpvAtingido: tpvDoMes,
-        remuneracao,
-        status,
+        crescimento: cresc,
+        tpvAtingido: tpvSimulado,
+        remuneracao: remun,
+        status: statusTexto,
         statusTipo,
-        anoReferencia
+        anoReferencia: anoRef,
       });
     }
 
-    const data: ConvencaoRJData = {
+    const tpvAtingidoFinal = cronograma[cronograma.length - 1]?.tpvAtingido || meta;
+    const idxMesAbril = idxAbril !== -1 ? idxAbril : mesesParaAbril - 1;
+    const comissaoAoAtingir = cronograma[idxMesAbril]?.remuneracao || (tpv + crescimentoMensal * mesesParaAbril) * rec;
+
+    setResult({
       tpvAtual: tpv,
       recorrencia: rec,
-      campanha: campanhaSelecionada,
-      mesesDisponiveis: calcMesesDisponiveis,
+      campanha: selectedCampanha,
+      mesesDisponiveis: mesesParaAbril,
+      mesesAteAbril: mesesParaAbril,
+      totalMesesCronograma,
       anoConvencao,
+      anoAlvoAbril,
       meta,
       faltam,
-      crescimentoNecessario,
+      crescimentoNecessario: crescimentoMensal,
       percentualCrescimento,
+      comissaoAoAtingir,
+      tpvAtingidoFinal,
+      cronograma,
       viabilidade: {
         label: viabilidadeLabel,
         tipo: viabilidadeTipo,
-        cor: viabilidadeCor
+        cor: viabilidadeCor,
       },
-      cronograma,
-      jaAtingida
-    };
-
-    setResultado(data);
+      jaAtingida: jaAtingiu,
+    });
   };
-
-  useEffect(() => {
-    if (tpvAtualStr && parseValue(tpvAtualStr) > 0) {
-      handleCalcular();
-    }
-  }, [campanhaId]);
 
   const handleLimpar = () => {
-    setTpvAtualStr('');
+    setTpvStr('');
     setRecorrenciaStr('');
-    setResultado(null);
-  };
-
-  const handleExportCSV = () => {
-    if (!resultado) return;
-    const rows: (string | number)[][] = [
-      ['Planner de Metas B91 - Convenção RJ'],
-      ['Campanha', resultado.campanha.nome],
-      ['Meta TPV', formatMoneyNum(resultado.meta)],
-      ['TPV Atual', formatMoneyNum(resultado.tpvAtual)],
-      ['Recorrência', formatPercentage(resultado.recorrencia)],
-      ['Meses Disponíveis', resultado.mesesDisponiveis],
-      ['Crescimento Necessário/Mês', formatMoneyNum(resultado.crescimentoNecessario)],
-      ['Viabilidade', resultado.viabilidade.label],
-      [],
-      ['Mês', 'Meta TPV', 'Crescimento', 'TPV Atingido', 'Remuneração Mensal', 'Status']
-    ];
-
-    resultado.cronograma.forEach(r => {
-      rows.push([
-        r.mes,
-        formatMoneyNum(r.tpvMeta),
-        formatMoneyNum(r.crescimento),
-        formatMoneyNum(r.tpvAtingido),
-        formatMoneyNum(r.remuneracao),
-        r.status
-      ]);
-    });
-
-    exportToCSV(`Convencao_RJ_${resultado.campanha.premio.replace(/\s+/g, '_')}`, rows);
+    setCrescimentoPersonalizadoStr('');
+    setTpvError(false);
+    setResult(null);
   };
 
   return (
-    <div className="space-y-8 py-6">
-      {/* Title Header */}
-      <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 py-6">
+      {/* Banner Principal Topo */}
+      <div className="bg-white rounded-2xl p-6 sm:p-7 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-emerald-600 font-semibold text-sm mb-1">
-            <Palmtree className="w-4 h-4" />
+          <div className="flex items-center gap-1.5 text-emerald-600 font-semibold text-xs mb-1.5">
+            <Palmtree className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>Convenção Regional B91</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Planner Convenção RJ
           </h2>
-          <p className="text-slate-500 text-sm mt-1">
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">
             Planejamento estratégico de TPV para atingimento das metas com regras de elegibilidade oficial
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 px-4 py-3 rounded-xl border border-emerald-200 text-xs sm:text-sm">
-          <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
-          <div>
-            <div>Convenção: <strong>Julho de {anoConvencao}</strong></div>
-            <div className="text-emerald-700 text-xs">Meses de crescimento: <strong>{calcMesesDisponiveis} meses</strong></div>
-          </div>
-        </div>
+        {onOpenHelp && (
+          <button
+            onClick={onOpenHelp}
+            title="Ver manual de como usar esta ferramenta"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-[#ff5e36] text-xs font-bold transition-all shadow-xs cursor-pointer shrink-0 self-start sm:self-center group"
+          >
+            <BookOpen className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" />
+            <span>Como usar esta aba</span>
+          </button>
+        )}
       </div>
 
-      {/* Input & Form Card */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-4">
-            <Target className="w-5 h-5 text-orange-500" />
-            <h3 className="font-bold text-lg text-slate-900">Parâmetros de Simulação</h3>
+      {/* Grid com 2 Colunas: Parâmetros (Esquerda) e Card da Campanha (Direita) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Coluna Esquerda: Parâmetros de Simulação */}
+        <div className="lg:col-span-7 bg-white rounded-2xl p-6 sm:p-7 border border-slate-200/80 shadow-xs space-y-5">
+          {/* Header */}
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-full border-2 border-[#ff5e36] flex items-center justify-center">
+              <div className="w-2 h-2 rounded-full bg-[#ff5e36]" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">Parâmetros de Simulação</h3>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-5">
+          {/* Grid de Inputs: TPV e Recorrência */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                TPV Atual (R$)
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                TPV ATUAL (R$)
               </label>
               <CurrencyInput
-                value={tpvAtualStr}
-                onValueChange={(values) => setTpvAtualStr(values.value)}
+                value={tpvStr}
+                onChangeValue={(v) => {
+                  setTpvStr(v.toString());
+                  if (tpvError) setTpvError(false);
+                }}
                 placeholder="R$ 0,00"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-slate-900 font-semibold text-base transition-all"
+                className={`w-full bg-slate-50/70 border ${
+                  tpvError ? 'border-rose-400 focus:border-rose-500 ring-1 ring-rose-400/40' : 'border-slate-200 focus:border-[#ff5e36]'
+                } rounded-xl px-4 py-3 text-slate-900 font-semibold text-sm focus:bg-white focus:outline-none transition-all`}
               />
-              <p className="text-[11px] text-slate-400 mt-1">Volume transacionado atual da sua carteira</p>
+              {tpvError ? (
+                <p className="text-[11px] text-rose-500 font-bold mt-1">
+                  Informe o TPV atual para calcular a projeção.
+                </p>
+              ) : (
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Volume transacionado atual da sua carteira
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                Recorrência (%)
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                RECORRÊNCIA (%)
               </label>
-              <PercentageInput
+              <PercentInput
                 value={recorrenciaStr}
-                onChange={(formatted) => setRecorrenciaStr(formatted)}
+                onChange={(val) => setRecorrenciaStr(val)}
                 placeholder="0,32%"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-slate-900 font-semibold text-base transition-all"
+                className="w-full bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-semibold text-sm focus:bg-white focus:border-[#ff5e36] focus:outline-none transition-all"
               />
-              <p className="text-[11px] text-slate-400 mt-1">Padrão institucional B91: 0,32%</p>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Padrão institucional B91: 0,32%
+              </p>
             </div>
           </div>
 
+          {/* Crescimento Mensal Desejado (Opcional) */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              Selecione a Campanha / Premiação Alvo
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                CRESCIMENTO MENSAL DESEJADO (R$/MÊS)
+              </label>
+              <span className="text-[10px] text-slate-400 font-medium bg-slate-100 px-2 py-0.5 rounded-full">
+                Opcional • Calculado automaticamente se vazio
+              </span>
+            </div>
+            <CurrencyInput
+              value={crescimentoPersonalizadoStr}
+              onChangeValue={(v) => setCrescimentoPersonalizadoStr(v.toString())}
+              placeholder="Ex: R$ 100.000,00 (deixe vazio para cálculo automático)"
+              className="w-full bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-semibold text-sm focus:bg-white focus:border-[#ff5e36] focus:outline-none transition-all"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">
+              Se não preenchido, calcula o ritmo exato para bater a meta em Abril (ou expansão contínua se já elegível)
+            </p>
+          </div>
+
+          {/* Seleção de Campanha */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              SELECIONE A CAMPANHA / PREMIAÇÃO ALVO
             </label>
             <select
               value={campanhaId}
-              onChange={(e) => setCampanhaId(Number(e.target.value))}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-slate-900 font-semibold text-base transition-all"
+              onChange={(e) => setCampanhaId(parseInt(e.target.value, 10))}
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-semibold text-sm focus:border-[#ff5e36] focus:outline-none transition-all cursor-pointer"
             >
-              {CAMPANHAS.map((c) => (
+              {CAMPANHAS_OFICIAIS.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.emoji} {c.nome} (Meta: {formatMoneyNum(c.meta)})
+                  {c.emoji} {c.nome} (Meta: {formatCurrency(c.meta)})
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-4 border-t border-slate-100">
+          {/* Botões de Ação */}
+          <div className="flex items-center gap-3 pt-2">
             <button
               onClick={handleCalcular}
-              className="flex-1 sm:flex-initial px-5 sm:px-6 py-3 bg-[#ff5e36] hover:bg-[#e84f29] text-white font-bold rounded-xl shadow-md shadow-orange-500/25 transition-all flex items-center justify-center gap-2 text-sm cursor-pointer min-h-[44px]"
+              className="px-6 py-3 bg-[#ff5e36] hover:bg-[#e84f29] active:scale-95 text-white font-bold rounded-xl shadow-xs transition-all text-sm flex items-center gap-2 cursor-pointer"
             >
-              <Target className="w-4 h-4" />
+              <div className="w-4 h-4 rounded-full border-2 border-white flex items-center justify-center">
+                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+              </div>
               <span>Calcular Projeção RJ</span>
             </button>
+
             <button
               onClick={handleLimpar}
-              className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 text-sm cursor-pointer min-h-[44px]"
+              className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold rounded-xl text-sm transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
               <span>Limpar</span>
             </button>
-            {resultado && (
-              <>
-                <button
-                  onClick={handleExportCSV}
-                  className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 text-sm cursor-pointer min-h-[44px]"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                  <span>Exportar CSV</span>
-                </button>
-                {onOpenReport && (
-                  <button
-                    onClick={() => onOpenReport(resultado)}
-                    className="w-full sm:w-auto px-4 py-3 bg-[#0b1c2d] hover:bg-slate-900 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-sm sm:ml-auto shadow-md shadow-slate-900/10 cursor-pointer min-h-[44px]"
-                    title="Exportar projeção da Convenção RJ em PDF"
-                  >
-                    <FileDown className="w-4 h-4 text-[#ff5e36]" />
-                    <span>Exportar PDF / Imprimir</span>
-                  </button>
-                )}
-              </>
-            )}
           </div>
         </div>
 
-        {/* Selected Campaign Preview */}
-        <div className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="relative h-48 bg-slate-100 overflow-hidden">
+        {/* Coluna Direita: Card da Campanha Alvo */}
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs flex flex-col justify-between">
+          <div className="relative h-48 sm:h-52 bg-slate-900 overflow-hidden">
             <img
-              src={campanhaSelecionada.imagemUrl}
-              alt={campanhaSelecionada.premio}
+              src={selectedCampanha.imagemUrl}
+              alt={selectedCampanha.premio}
               className="w-full h-full object-cover"
               onError={(e) => {
-                const target = e.currentTarget;
-                target.src = "https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=800&auto=format&fit=crop&q=60";
+                (e.target as HTMLElement).style.display = 'none';
               }}
             />
-            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-slate-900/80 backdrop-blur-md text-white font-bold text-xs flex items-center gap-1.5">
-              <span>{campanhaSelecionada.emoji}</span>
+            {/* Badge Top Left */}
+            <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-xs text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm">
+              <span className="text-xs">🏷️</span>
               <span>Campanha Oficial</span>
             </div>
-            <div className="absolute bottom-3 right-3 px-3 py-1.5 rounded-lg bg-[#ff5e36] text-white font-extrabold text-xs shadow-md">
-              Meta: {formatMoneyNum(campanhaSelecionada.meta)}
+
+            {/* Badge Bottom Right */}
+            <div className="absolute bottom-3 right-3 bg-[#ff5e36] text-white px-3 py-1 rounded-lg text-xs font-bold font-mono shadow-sm">
+              Meta: {formatCurrency(selectedCampanha.meta)}
             </div>
           </div>
 
-          <div className="p-5 flex-1 flex flex-col justify-between">
+          <div className="p-5 space-y-3">
             <div>
-              <h4 className="font-bold text-slate-900 text-lg mb-1">
-                {campanhaSelecionada.premio}
-              </h4>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                {campanhaSelecionada.descricao}
+              <h3 className="text-lg font-bold text-slate-900">
+                {selectedCampanha.premio}
+              </h3>
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                {selectedCampanha.descricao}
               </p>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-100 bg-slate-50 p-3 rounded-xl">
-              <div className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider mb-1">
-                Regra B91 de Qualificação
-              </div>
-              <p className="text-xs text-slate-700 leading-tight">
-                Manter TPV acima de {formatMoneyNum(campanhaSelecionada.meta)} por 3 meses consecutivos no ciclo até Julho.
+            {/* Regra de Qualificação Box */}
+            <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                REGRA B91 DE QUALIFICAÇÃO
+              </span>
+              <p className="text-xs text-slate-700 font-medium leading-relaxed">
+                Manter TPV acima de {formatCurrency(selectedCampanha.meta)} por 3 meses consecutivos no ciclo até Julho.
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Results Section */}
-      {resultado && (
-        <div className="space-y-6">
-          {resultado.jaAtingida ? (
-            <div className="p-8 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200 text-center shadow-md">
-              <div className="text-6xl mb-3 animate-bounce">🎉</div>
-              <h3 className="text-2xl font-bold text-emerald-800 mb-2">
-                Parabéns! Meta de TPV já atingida!
-              </h3>
-              <p className="text-emerald-700 text-base max-w-xl mx-auto">
-                Seu TPV atual de <strong>{formatMoneyNum(resultado.tpvAtual)}</strong> já cobre a meta de {formatMoneyNum(resultado.meta)} da premiação <strong>{resultado.campanha.premio}</strong>!
-              </p>
+      {/* Resultados da Simulação ou Empty State */}
+      {!result ? (
+        /* Empty State (Screenshot 3) */
+        <div className="border border-dashed border-slate-300 rounded-2xl p-12 bg-white text-center shadow-xs">
+          <div className="w-12 h-12 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center mx-auto text-[#ff5e36]">
+            <div className="w-5 h-5 rounded-full border-2 border-[#ff5e36] flex items-center justify-center">
+              <div className="w-2 h-2 rounded-full bg-[#ff5e36]" />
             </div>
-          ) : (
-            <>
-              {/* Summary KPIs */}
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Meta TPV
-                  </div>
-                  <div className="text-xl sm:text-2xl font-black text-slate-900">
-                    {formatMoneyNum(resultado.meta)}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                    <span>{resultado.campanha.emoji}</span>
-                    <span>{resultado.campanha.premio}</span>
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Falta Atingir
-                  </div>
-                  <div className="text-xl sm:text-2xl font-black text-orange-600">
-                    {formatMoneyNum(resultado.faltam)}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    Em {resultado.mesesDisponiveis} meses até a convenção
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Crescimento Necessário
-                  </div>
-                  <div className="text-xl sm:text-2xl font-black text-blue-600">
-                    {formatMoneyNum(resultado.crescimentoNecessario)} <span className="text-xs font-semibold text-slate-500">/mês</span>
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    Taxa: {resultado.percentualCrescimento.toFixed(1)}% ao mês
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Viabilidade Estratégica
-                  </div>
-                  <div className="text-base sm:text-lg font-black text-slate-800">
-                    {resultado.viabilidade.label}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    {resultado.percentualCrescimento <= 15 ? 'Ritmo sustentável' : resultado.percentualCrescimento <= 30 ? 'Exige foco em expansão' : 'Considere meta intermediária'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Month-by-month table */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/50">
-                  <div>
-                    <h4 className="font-extrabold text-slate-900 text-lg">
-                      📅 Cronograma Mensal Rumo à Convenção RJ
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Crescimento mensal programado: <strong>{formatMoneyNum(resultado.crescimentoNecessario)}</strong> por mês
-                    </p>
-                  </div>
-                  <div className="text-xs font-semibold text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200">
-                    Convenção: Julho/{resultado.anoConvencao}
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-700 text-xs uppercase font-bold tracking-wider">
-                        <th className="py-3 px-4">Mês</th>
-                        <th className="py-3 px-4">TPV Meta</th>
-                        <th className="py-3 px-4">Crescimento</th>
-                        <th className="py-3 px-4">TPV Atingido</th>
-                        <th className="py-3 px-4">Remuneração Mensal</th>
-                        <th className="py-3 px-4">Status de Elegibilidade</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-sm">
-                      {resultado.cronograma.map((row, idx) => {
-                        const isFinalMonth = row.mesNumero === 7;
-                        return (
-                          <tr 
-                            key={idx} 
-                            className={`hover:bg-slate-50/80 transition-colors ${
-                              isFinalMonth ? 'bg-amber-50/50 font-semibold' : ''
-                            }`}
-                          >
-                            <td className="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap">
-                              {row.mes}
-                            </td>
-                            <td className="py-3.5 px-4 font-semibold text-slate-600 whitespace-nowrap">
-                              {formatMoneyNum(row.tpvMeta)}
-                            </td>
-                            <td className="py-3.5 px-4 text-blue-600 font-medium whitespace-nowrap">
-                              {row.crescimento > 0 ? `+${formatMoneyNum(row.crescimento)}` : '—'}
-                            </td>
-                            <td className="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap">
-                              <div>{formatMoneyNum(row.tpvAtingido)}</div>
-                            </td>
-                            <td className="py-3.5 px-4 whitespace-nowrap">
-                              <div className="font-bold text-emerald-600">
-                                {formatMoneyNum(row.remuneracao)}
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                {formatPercentage(resultado.recorrencia)} de recorrência
-                              </div>
-                            </td>
-                            <td className="py-3.5 px-4 whitespace-nowrap">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
-                                row.statusTipo === 'elegivel' || row.statusTipo === 'elegivel_final'
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                  : row.statusTipo === 'validacao'
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                                  : row.statusTipo === 'pre_validacao'
-                                  ? 'bg-blue-100 text-blue-800 border border-blue-300'
-                                  : row.statusTipo === 'nao_elegivel'
-                                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                                  : 'bg-slate-100 text-slate-700 border border-slate-300'
-                              }`}>
-                                {row.status}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="p-4 bg-amber-50/70 border-t border-amber-200 text-xs text-amber-800 flex items-start gap-2">
-                  <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <strong>Regra Oficial de Elegibilidade:</strong> A meta de TPV estipulada para a campanha deve ser mantida obrigatoriamente por <strong>3 meses consecutivos</strong> com taxa de recorrência mínima de <strong>0,32%</strong>.
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {!resultado && (
-        <div className="bg-white rounded-2xl p-8 sm:p-12 border border-dashed border-slate-300 text-center space-y-3">
-          <div className="w-12 h-12 rounded-2xl bg-orange-50 text-[#ff5e36] flex items-center justify-center mx-auto mb-2">
-            <Target className="w-6 h-6" />
           </div>
-          <h4 className="text-base font-bold text-slate-800">Preencha os parâmetros para calcular a projeção</h4>
-          <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+          <h4 className="text-base font-bold text-slate-900 mt-3.5">
+            Preencha os parâmetros para calcular a projeção
+          </h4>
+          <p className="text-xs text-slate-500 max-w-xl mx-auto mt-2 leading-relaxed">
             Informe o TPV atual da sua carteira e clique em <strong>Calcular Projeção RJ</strong> para visualizar o cronograma mensal de atingimento com evolução de comissões até a Convenção RJ.
           </p>
         </div>
+      ) : (
+        /* Resultado da Simulação */
+        <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200/80 shadow-xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-xl font-bold text-slate-900">
+                Resultado da Simulação • {result.campanha.premio}
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Ciclo até Julho de {result.anoConvencao} ({result.mesesDisponiveis} meses de crescimento disponível)
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => onOpenReport && onOpenReport(result)}
+                className="px-4 py-2 bg-[#ff5e36] hover:bg-[#e84f29] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Impressão</span>
+              </button>
+            </div>
+          </div>
+
+          {result.jaAtingida && (
+            <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-3">
+              <div className="text-4xl">🎉</div>
+              <h4 className="text-xl font-extrabold text-emerald-900">
+                Parabéns! Sua carteira atual já atinge o TPV da campanha!
+              </h4>
+              <p className="text-sm text-emerald-700 max-w-xl mx-auto">
+                Seu TPV de <strong>{formatCurrency(result.tpvAtual)}</strong> já cobre a meta de {formatCurrency(result.meta)}.
+                Comissão mensal projetada de <strong>{formatCurrency(result.comissaoAoAtingir)}</strong> mantendo a recorrência de {formatPercent(result.recorrencia)}. Mantenha o volume por 3 meses para garantir a elegibilidade final.
+              </p>
+            </div>
+          )}
+
+          {/* Cards de Métricas */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <span className="text-xs text-slate-500 font-semibold uppercase block">
+                Crescimento Mensal
+              </span>
+              <strong className="text-xl font-black text-slate-900 font-mono mt-1 block">
+                {result.crescimentoNecessario > 0 ? `+${formatCurrency(result.crescimentoNecessario)}` : 'Meta Atingida'}
+              </strong>
+              <span className="text-[11px] text-slate-500">
+                {result.crescimentoNecessario > 0
+                  ? `+${result.percentualCrescimento.toFixed(1)}% ao mês até Abril/${result.anoAlvoAbril}`
+                  : 'Manutenção de carteira ativa'}
+              </span>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <span className="text-xs text-slate-500 font-semibold uppercase block">
+                Prazo até Elegibilidade
+              </span>
+              <strong className="text-xl font-black text-blue-700 font-mono mt-1 block">
+                {result.jaAtingida ? 'Já Elegível' : `${result.mesesAteAbril} meses`}
+              </strong>
+              <span className="text-[11px] text-slate-500">
+                {result.jaAtingida ? 'Status Elegível ativo' : `Meta em Abril/${result.anoAlvoAbril} (Elegível)`}
+              </span>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <span className="text-xs text-slate-500 font-semibold uppercase block">
+                Comissão ao Atingir
+              </span>
+              <strong className="text-xl font-black text-emerald-700 font-mono mt-1 block">
+                {formatCurrency(result.comissaoAoAtingir)}
+              </strong>
+              <span className="text-[11px] text-slate-500">
+                recorrência mensal sobre {formatCurrency(result.tpvAtingidoFinal)}
+              </span>
+            </div>
+
+            <div className={`p-4 rounded-xl border ${result.viabilidade.cor}`}>
+              <span className="text-xs font-semibold uppercase block opacity-80">
+                Índice de Viabilidade
+              </span>
+              <strong className="text-base font-black mt-1 block">
+                {result.viabilidade.label}
+              </strong>
+              <span className="text-[11px] opacity-80">
+                ritmo necessário para elegibilidade
+              </span>
+            </div>
+          </div>
+
+          {/* Tabela do Cronograma */}
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-left text-xs sm:text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-700">
+                  <th className="py-3 px-4 font-bold text-xs uppercase">Mês</th>
+                  <th className="py-3 px-4 font-bold text-xs uppercase">Meta TPV</th>
+                  <th className="py-3 px-4 font-bold text-xs uppercase">Crescimento</th>
+                  <th className="py-3 px-4 font-bold text-xs uppercase">TPV Atingido</th>
+                  <th className="py-3 px-4 font-bold text-xs uppercase">Remuneração</th>
+                  <th className="py-3 px-4 font-bold text-xs uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {result.cronograma.map((row: any, idx: number) => {
+                  const isElegivel = row.statusTipo === 'elegivel_final' || row.statusTipo === 'elegivel';
+                  const isNaoElegivel = row.statusTipo === 'nao_elegivel';
+
+                  return (
+                    <tr
+                      key={idx}
+                      className={`hover:bg-slate-50 transition-colors ${
+                        isElegivel ? 'bg-emerald-50/70' : isNaoElegivel ? 'bg-rose-50/50' : ''
+                      }`}
+                    >
+                      <td className="py-3 px-4 font-bold text-slate-900">{row.mes}</td>
+                      <td className="py-3 px-4 font-mono text-slate-600">{formatCurrency(row.tpvMeta)}</td>
+                      <td className="py-3 px-4 font-mono font-semibold text-[#ff5e36]">
+                        {row.crescimento > 0 ? `+${formatCurrency(row.crescimento)}` : '-'}
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                        {formatCurrency(row.tpvAtingido)}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-emerald-700 font-bold">
+                        {formatCurrency(row.remuneracao)}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                            isElegivel
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : isNaoElegivel
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {row.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
-      <div className="pt-4 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
-        <span className="flex items-center gap-1.5 italic">
-          <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          * As imagens do evento e da premiação são meramente ilustrativas.
-        </span>
-        <span className="text-[11px] text-slate-400 font-medium">
-          Convenção RJ • Circuito Oficial de Premiações B91
-        </span>
+      {/* Rodapé Informativo (Screenshot 3) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-400 px-1 pt-1">
+        <span className="italic">ⓘ * As imagens do evento e da premiação são meramente ilustrativas.</span>
+        <span>Convenção RJ • Circuito Oficial de Premiações B91</span>
       </div>
     </div>
   );

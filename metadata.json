@@ -1,8 +1,6 @@
 {
-  "name": "Planner de Metas - B91",
-  "description": "Planejamento Estratégico Comercial - Gestão PR Negócios",
+  "name": "Planner de Metas B91",
+  "description": "Planejamento Estratégico Comercial • Gestão PR Negócios",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -1,52 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { HomeView } from './components/HomeView';
 import { ConvencaoRJView } from './components/ConvencaoRJView';
-import { TodasPremiacoesView } from './components/TodasPremiacoesView';
-import { RemuneracaoCrescimentoView } from './components/RemuneracaoCrescimentoView';
-import { ComparadorMetasView } from './components/ComparadorMetasView';
-import { ModalResumo } from './components/ModalResumo';
-import { WelcomeModal } from './components/WelcomeModal';
-import { LoginPresentationView } from './components/LoginPresentationView';
+import { PremiacoesView } from './components/PremiacoesView';
+import { CrescimentoView } from './components/CrescimentoView';
+import { ComparadorView } from './components/ComparadorView';
 import { ComoUsarView } from './components/ComoUsarView';
+import { ComoUsarModal } from './components/ComoUsarModal';
+import { ReportModal } from './components/ReportModal';
+import { EditNameModal } from './components/EditNameModal';
+import { LoginScreen } from './components/LoginScreen';
 
-export default function App() {
+export function App() {
   const [activeTab, setActiveTab] = useState<string>('home');
   const [selectedCampaignId, setSelectedCampaignId] = useState<number>(0);
-  const [userName, setUserName] = useState<string>('');
-  const [isEditNameModalOpen, setIsEditNameModalOpen] = useState<boolean>(false);
-  const [helpReturnTab, setHelpReturnTab] = useState<string>('home');
+  const [userName, setUserName] = useState<string>(() => {
+    return localStorage.getItem('planner_user_name') || '';
+  });
+  const [isEditNameOpen, setIsEditNameOpen] = useState(false);
+  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+  const [lastTabBeforeHelp, setLastTabBeforeHelp] = useState<string>('home');
 
-  const handleSaveUserName = (name: string) => {
-    const clean = name.trim().toUpperCase();
-    setUserName(clean);
-  };
-
-  const handleOpenHelp = () => {
-    setHelpReturnTab(activeTab === 'comoUsar' ? helpReturnTab : activeTab);
-    setActiveTab('comoUsar');
-  };
-
-  const handleCloseHelp = () => {
-    setActiveTab(helpReturnTab || 'home');
-  };
-
-  const handleLogout = () => {
-    setUserName('');
-    setActiveTab('home');
-    setHelpReturnTab('home');
-  };
-
-  const handleClearAllData = () => {
-    setUserName('');
-    setActiveTab('home');
-    setSelectedCampaignId(0);
-    setHelpReturnTab('home');
-  };
-
-  const [reportModal, setReportModal] = useState<{
+  const [reportState, setReportState] = useState<{
     isOpen: boolean;
-    tipo: 'convencaoRJ' | 'premiacoes' | 'crescimento' | 'geral';
+    tipo: string;
     data: any;
   }>({
     isOpen: false,
@@ -54,41 +31,85 @@ export default function App() {
     data: null,
   });
 
-  const handleOpenReport = (data: any, tipo: 'convencaoRJ' | 'premiacoes' | 'crescimento' | 'geral' = 'geral') => {
-    setReportModal({
+  const handleLogin = (name: string) => {
+    const clean = name.trim().toUpperCase();
+    setUserName(clean);
+    localStorage.setItem('planner_user_name', clean);
+  };
+
+  const handleLogout = () => {
+    setUserName('');
+    localStorage.removeItem('planner_user_name');
+    setActiveTab('home');
+    setLastTabBeforeHelp('home');
+  };
+
+  const handleClearData = () => {
+    setUserName('');
+    localStorage.clear();
+    setActiveTab('home');
+    setSelectedCampaignId(0);
+    setLastTabBeforeHelp('home');
+  };
+
+  const handleOpenHelp = (section?: string) => {
+    if (section) {
+      setLastTabBeforeHelp(section);
+    } else {
+      setLastTabBeforeHelp(activeTab === 'comoUsar' ? 'home' : activeTab);
+    }
+    setIsHelpModalOpen(true);
+  };
+
+  const handleBackFromHelp = () => {
+    setActiveTab(lastTabBeforeHelp || 'home');
+  };
+
+  const handleOpenReport = (data: any, tipo: string = 'geral') => {
+    setReportState({
       isOpen: true,
       tipo,
       data,
     });
   };
 
-  // Se o consultor ainda não informou o nome, exibe a página independente de apresentação
   if (!userName) {
     return (
-      <LoginPresentationView
-        onLogin={handleSaveUserName}
+      <LoginScreen
+        onLogin={handleLogin}
         savedName=""
-        onClearData={handleClearAllData}
+        onClearData={handleClearData}
       />
     );
   }
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col selection:bg-[#ff5e36] selection:text-white">
-      {/* Header with Consultant Name and Logout option */}
+      {/* Cabeçalho Oficial */}
       <Header
         activeTab={activeTab}
-        onNavigate={(tab) => setActiveTab(tab)}
+        onNavigate={(tab) => {
+          if (tab === 'comoUsar') {
+            handleOpenHelp();
+          } else {
+            setActiveTab(tab);
+          }
+        }}
         userName={userName}
-        onEditName={() => setIsEditNameModalOpen(true)}
+        onEditName={() => setIsEditNameOpen(true)}
         onLogout={handleLogout}
-        onClearData={handleClearAllData}
+        onClearData={handleClearData}
+        onOpenHelp={() => handleOpenHelp(activeTab)}
+        onBack={() => setActiveTab('home')}
       />
 
-      {/* Main Content */}
+      {/* Conteúdo Principal */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-2 sm:py-4">
         {activeTab === 'comoUsar' && (
-          <ComoUsarView activeSection={helpReturnTab} onBack={handleCloseHelp} />
+          <ComoUsarView
+            activeSection={lastTabBeforeHelp}
+            onBack={handleBackFromHelp}
+          />
         )}
 
         {activeTab === 'home' && (
@@ -96,7 +117,7 @@ export default function App() {
             onNavigate={(tab) => setActiveTab(tab)}
             onSelectCampaign={(id) => setSelectedCampaignId(id)}
             userName={userName}
-            onEditName={() => setIsEditNameModalOpen(true)}
+            onEditName={() => setIsEditNameOpen(true)}
             onLogout={handleLogout}
           />
         )}
@@ -105,49 +126,57 @@ export default function App() {
           <ConvencaoRJView
             initialCampanhaId={selectedCampaignId}
             onOpenReport={(data) => handleOpenReport(data, 'convencaoRJ')}
+            onOpenHelp={() => handleOpenHelp('convencaoRJ')}
           />
         )}
 
         {activeTab === 'premiacoes' && (
-          <TodasPremiacoesView
+          <PremiacoesView
             selectedCampaignId={selectedCampaignId}
             onOpenReport={(data) => handleOpenReport(data, 'premiacoes')}
+            onOpenHelp={() => handleOpenHelp('premiacoes')}
           />
         )}
 
         {activeTab === 'crescimento' && (
-          <RemuneracaoCrescimentoView
+          <CrescimentoView
             onOpenReport={(data) => handleOpenReport(data, 'crescimento')}
+            onOpenHelp={() => handleOpenHelp('crescimento')}
           />
         )}
 
         {activeTab === 'comparador' && (
-          <ComparadorMetasView
+          <ComparadorView
             onSelectCampaign={(id) => setSelectedCampaignId(id)}
             onNavigateToTab={(tab) => setActiveTab(tab)}
             onOpenReport={(data) => handleOpenReport(data, 'geral')}
+            onOpenHelp={() => handleOpenHelp('comparador')}
           />
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="no-print bg-[#0b1c2d] border-t border-slate-800 text-slate-400 py-8 mt-16 text-xs">
+      {/* Rodapé Oficial */}
+      <footer className="no-print bg-[#071524] border-t border-slate-800/80 text-slate-400 py-8 mt-16 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
-            <div className="w-7 h-7 rounded-lg bg-[#ff5e36] text-white font-extrabold flex items-center justify-center text-xs shadow">
+            <div className="w-7 h-7 rounded-lg bg-[#ff5e36] text-white font-extrabold flex items-center justify-center text-xs shadow-xs shrink-0">
               PR
             </div>
             <div>
-              <div className="text-white font-bold text-sm">Planner de Metas • Gestão PR Negócios</div>
-              <p className="text-slate-400 text-[11px]">Planejamento Estratégico Comercial</p>
+              <div className="text-white font-bold text-sm leading-tight">
+                Planner de Metas • Gestão PR Negócios
+              </div>
+              <p className="text-slate-400 text-[11px] mt-0.5">
+                Planejamento Estratégico Comercial
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-[11px] text-slate-500">
+          <div className="flex items-center gap-3 text-[11px] text-slate-400">
             <button
-              onClick={handleClearAllData}
+              onClick={handleClearData}
               title="Limpar todos os dados salvos antes de exportar o código ou reiniciar atendimento"
-              className="hover:text-amber-400 underline underline-offset-2 transition-colors cursor-pointer"
+              className="hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
             >
               Limpar Dados (Reset)
             </button>
@@ -157,22 +186,32 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Modal Report (Impressão e Exportação em PDF) */}
-      <ModalResumo
-        isOpen={reportModal.isOpen}
-        onClose={() => setReportModal(prev => ({ ...prev, isOpen: false }))}
-        tipo={reportModal.tipo}
-        data={reportModal.data}
+      {/* Modais */}
+      <ComoUsarModal
+        isOpen={isHelpModalOpen}
+        onClose={() => setIsHelpModalOpen(false)}
+        activeSection={activeTab === 'comoUsar' ? lastTabBeforeHelp : activeTab}
+      />
+
+      <ReportModal
+        isOpen={reportState.isOpen}
+        onClose={() => setReportState((prev) => ({ ...prev, isOpen: false }))}
+        tipo={reportState.tipo}
+        data={reportState.data}
         userName={userName}
       />
 
-      {/* Modal para Alteração Rápida de Nome */}
-      <WelcomeModal
-        isOpen={isEditNameModalOpen}
-        onClose={() => setIsEditNameModalOpen(false)}
+      <EditNameModal
+        isOpen={isEditNameOpen}
+        onClose={() => setIsEditNameOpen(false)}
         currentName={userName}
-        onSaveName={handleSaveUserName}
+        onSaveName={(name) => {
+          setUserName(name);
+          localStorage.setItem('planner_user_name', name);
+        }}
       />
     </div>
   );
 }
+
+export default App;
