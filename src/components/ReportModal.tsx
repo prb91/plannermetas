@@ -64,71 +64,96 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   };
 
   const handleDownloadPdf = async () => {
-    const el = document.getElementById('relatorio-conteudo');
-    if (!el) {
-      window.print();
-      return;
-    }
+    const el = document.getElementById('relatorio-executivo');
+    if (!el) return;
+
+    const previousDisplay = el.style.display;
+    el.style.display = 'block';
+    if (!el) return;
+
+    const waitForImages = async () => {
+      const images = Array.from(el.querySelectorAll('img'));
+      await Promise.all(
+        images.map((img) => {
+          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+          return new Promise<void>((resolve) => {
+            const done = () => resolve();
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+            window.setTimeout(done, 5000);
+          });
+        })
+      );
+    };
+
+    const downloadBlob = (blob: Blob, filename: string) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    };
 
     try {
       setIsGeneratingPdf(true);
+      await waitForImages();
+
       const canvas = await html2canvas(el, {
         scale: 2,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         logging: false,
         backgroundColor: '#ffffff',
         scrollX: 0,
         scrollY: 0,
-        windowWidth: 1200,
+        windowWidth: Math.max(el.scrollWidth, 1200),
+        windowHeight: el.scrollHeight,
       });
 
       const imgData = canvas.toDataURL('image/png', 1.0);
       const pdf = new jsPDF({
-        orientation: 'portrait',
+        orientation: 'landscape',
         unit: 'mm',
         format: 'a4',
+        compress: true,
       });
 
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 297; // A4 height in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pageWidth = 297;
+      const pageHeight = 210;
+      const imgHeight = (canvas.height * pageWidth) / canvas.width;
       let heightLeft = imgHeight;
       let position = 0;
 
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      pdf.addImage(imgData, 'PNG', 0, position, pageWidth, imgHeight, undefined, 'FAST');
       heightLeft -= pageHeight;
 
       while (heightLeft > 0) {
         position -= pageHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        pdf.addPage('a4', 'landscape');
+        pdf.addImage(imgData, 'PNG', 0, position, pageWidth, imgHeight, undefined, 'FAST');
         heightLeft -= pageHeight;
       }
 
-      const safeUser = userName ? userName.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'consultor';
+      const safeUser = userName
+        ? userName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '_')
+        : 'consultor';
       const filename = `projecao_${tipo}_${safeUser}.pdf`;
 
-      try {
-        pdf.save(filename);
-      } catch (saveErr) {
-        const pdfBlob = pdf.output('blob');
-        const blobUrl = URL.createObjectURL(pdfBlob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = blobUrl;
-        downloadLink.download = filename;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
-      }
+      // Use a Blob download directly. This avoids the previous behavior where
+      // the PDF was generated/previewed but the browser did not save the file.
+      downloadBlob(pdf.output('blob'), filename);
 
       setDownloadSuccess(true);
       setTimeout(() => setDownloadSuccess(false), 4000);
     } catch (err) {
-      console.error('Erro ao gerar PDF com html2canvas, usando fallback de impressão:', err);
-      window.print();
+      console.error('Erro ao baixar PDF:', err);
+      setDownloadSuccess(false);
     } finally {
+      el.style.display = previousDisplay;
       setIsGeneratingPdf(false);
     }
   };
@@ -243,6 +268,129 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
+        </div>
+
+        {/* Relatório executivo exclusivo para impressão/PDF. A interface do sistema permanece inalterada. */}
+        <div
+          id="relatorio-executivo"
+          className="executive-report"
+          style={{ display: 'none' }}
+          aria-hidden="true"
+        >
+          <div className="executive-header">
+            <div>
+              <div className="executive-kicker">PLANNER DE METAS B91</div>
+              <h1>{getTituloProjecao()}</h1>
+              <p>Relatório Executivo de Projeção Comercial</p>
+            </div>
+            <div className="executive-meta">
+              <div><span>Consultor</span><strong>{userName || 'CONSULTOR'}</strong></div>
+              <div><span>Emissão</span><strong>{dataEmissao}</strong></div>
+            </div>
+          </div>
+
+          {tipo === 'convencaoRJ' && (
+            <>
+              <div className="executive-section-title">Resumo Executivo</div>
+              <div className="executive-metrics">
+                <div><span>TPV Atual</span><strong>{formatCurrency(data.tpvAtual)}</strong></div>
+                <div><span>Recorrência</span><strong>{formatPercent(data.recorrencia || 0)}</strong></div>
+                <div><span>Crescimento Mensal</span><strong>{data.crescimentoNecessario > 0 ? `+${formatCurrency(data.crescimentoNecessario)}` : 'Meta atingida'}</strong></div>
+                <div><span>Meta</span><strong>{formatCurrency(data.meta)}</strong></div>
+              </div>
+              <div className="executive-highlight">
+                <div>
+                  <span>Campanha / Premiação</span>
+                  <strong>{data.campanha?.nome || 'Campanha'} — {data.campanha?.premio || ''}</strong>
+                </div>
+                <div>
+                  <span>Comissão ao atingir</span>
+                  <strong>{formatCurrency(data.comissaoAoAtingir || (data.tpvAtingidoFinal || data.meta) * (data.recorrencia || 0.0032))}/mês</strong>
+                </div>
+                <div>
+                  <span>Viabilidade</span>
+                  <strong>{data.viabilidade?.label || 'Alcançável'}</strong>
+                </div>
+              </div>
+              <div className="executive-section-title">Cronograma de Atingimento</div>
+              <table className="executive-table">
+                <thead><tr><th>Mês</th><th>Meta TPV</th><th>Crescimento</th><th>TPV Atingido</th><th>Remuneração</th><th>Status</th></tr></thead>
+                <tbody>
+                  {data.cronograma?.map((row: any, i: number) => (
+                    <tr key={i}><td>{row.mes}</td><td>{formatCurrency(row.tpvMeta)}</td><td>{row.crescimento > 0 ? `+${formatCurrency(row.crescimento)}` : '-'}</td><td>{formatCurrency(row.tpvAtingido)}</td><td>{formatCurrency(row.remuneracao)}</td><td>{row.status}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {tipo === 'premiacoes' && (
+            <>
+              <div className="executive-section-title">Resumo Executivo</div>
+              <div className="executive-metrics">
+                <div><span>Premiação</span><strong>{data.campanha?.premio || data.campanha?.nome || '—'}</strong></div>
+                <div><span>Meta</span><strong>{formatCurrency(data.meta)}</strong></div>
+                <div><span>Prazo</span><strong>{data.meses === 0 || data.jaAtingiu ? 'Já elegível' : `${data.meses} meses`}</strong></div>
+                <div><span>Comissão ao atingir</span><strong>{formatCurrency(data.comissaoAoAtingir || data.rows?.[data.rows.length - 1]?.comissao || (data.meta * (data.recorrencia || 0.0032)))}/mês</strong></div>
+              </div>
+              <div className="executive-highlight">
+                <div><span>Renda Total Mensal</span><strong>{formatCurrency(data.comissaoTotalAoAtingir || data.rows?.[data.rows.length - 1]?.comissaoMaisTAC || 0)}</strong></div>
+                <div><span>Novos Clientes</span><strong>{data.clientesMes || 0}/mês</strong></div>
+              </div>
+              <div className="executive-section-title">Evolução Projetada</div>
+              <table className="executive-table">
+                <thead><tr><th>Mês</th><th>TPV Adicionado</th><th>TPV Acumulado</th><th>Comissão</th><th>TAC</th><th>Renda Total</th></tr></thead>
+                <tbody>
+                  {data.rows?.slice(0, 18).map((row: any, i: number) => (
+                    <tr key={i} className={row.atingiuMeta ? 'executive-row-highlight' : ''}><td>{row.nomeMes}</td><td>{formatCurrency(row.tpvPorMes)}</td><td>{formatCurrency(row.acumulado)}</td><td>{formatCurrency(row.comissao)}</td><td>{formatCurrency(row.remuneracaoTAC)}</td><td>{formatCurrency(row.comissaoMaisTAC)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {tipo === 'crescimento' && (
+            <>
+              <div className="executive-section-title">Resumo Executivo</div>
+              <div className="executive-metrics">
+                <div><span>Renda Alvo</span><strong>{formatCurrency(data.comissaoMeta)}/mês</strong></div>
+                <div><span>TPV Necessário</span><strong>{formatCurrency(data.tpvNecessario)}</strong></div>
+                <div><span>Atingimento</span><strong>{data.nomeMesAtingida || 'Projetado'}</strong></div>
+                <div><span>Novos Clientes</span><strong>{data.clientesMes || 0}/mês</strong></div>
+              </div>
+              <div className="executive-section-title">Evolução Projetada</div>
+              <table className="executive-table">
+                <thead><tr><th>Mês</th><th>TPV Novo</th><th>TPV Acumulado</th><th>Comissão</th><th>TAC</th><th>Renda Total</th><th>Status</th></tr></thead>
+                <tbody>
+                  {data.rows?.map((row: any, i: number) => (
+                    <tr key={i} className={row.isMetaMonth ? 'executive-row-highlight' : ''}><td>{row.nomeMes}</td><td>{formatCurrency(row.tpvMensal)}</td><td>{formatCurrency(row.tpvAcumulado)}</td><td>{formatCurrency(row.comissao)}</td><td>{formatCurrency(row.remuneracaoTAC)}</td><td>{formatCurrency(row.comissaoMaisTAC)}</td><td>{row.isMetaMonth ? 'Meta alcançada' : row.comissao >= data.comissaoMeta ? 'Meta superada' : 'Construção'}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {tipo === 'geral' && data.campanhas && (
+            <>
+              <div className="executive-section-title">Resumo das Premiações</div>
+              <div className="executive-highlight single">
+                <div><span>Ritmo mensal de TPV novo</span><strong>{formatCurrency(data.tpvPorMes)}/mês</strong></div>
+              </div>
+              <table className="executive-table">
+                <thead><tr><th>Campanha</th><th>Prêmio</th><th>Meta</th><th>Falta</th><th>Prazo</th><th>Comissão</th><th>Renda Total</th></tr></thead>
+                <tbody>
+                  {data.campanhas.map((c: any) => (
+                    <tr key={c.id}><td>{c.nome}</td><td>{c.premio}</td><td>{formatCurrency(c.meta)}</td><td>{formatCurrency(c.falta)}</td><td>{c.jaBateu ? 'Elegível' : `${c.mesesNecessarios} meses`}</td><td>{formatCurrency(c.comissaoAoBater)}</td><td>{formatCurrency(c.totalMensalAoBater)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          <div className="executive-footer">
+            <span>Planner de Metas B91 • Relatório Executivo</span>
+            <span>Projeções para planejamento estratégico • Resultados reais podem variar</span>
           </div>
         </div>
 
