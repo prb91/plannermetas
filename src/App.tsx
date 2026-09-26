@@ -14,9 +14,9 @@ import { LoginScreen } from './components/LoginScreen';
 export function App() {
   const [activeTab, setActiveTab] = useState<string>('home');
   const [selectedCampaignId, setSelectedCampaignId] = useState<number>(0);
-  const [userName, setUserName] = useState<string>(() => {
-    return localStorage.getItem('planner_user_name') || '';
-  });
+  // A página inicial deve ser exibida sempre que o link for aberto ou a página for recarregada.
+  // O nome fica apenas em memória durante a sessão atual e não é persistido no navegador.
+  const [userName, setUserName] = useState<string>('');
   const [isEditNameOpen, setIsEditNameOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [lastTabBeforeHelp, setLastTabBeforeHelp] = useState<string>('home');
@@ -34,19 +34,16 @@ export function App() {
   const handleLogin = (name: string) => {
     const clean = name.trim().toUpperCase();
     setUserName(clean);
-    localStorage.setItem('planner_user_name', clean);
   };
 
   const handleLogout = () => {
     setUserName('');
-    localStorage.removeItem('planner_user_name');
     setActiveTab('home');
     setLastTabBeforeHelp('home');
   };
 
   const handleClearData = () => {
     setUserName('');
-    localStorage.clear();
     setActiveTab('home');
     setSelectedCampaignId(0);
     setLastTabBeforeHelp('home');
@@ -207,7 +204,6 @@ export function App() {
         currentName={userName}
         onSaveName={(name) => {
           setUserName(name);
-          localStorage.setItem('planner_user_name', name);
         }}
       />
     </div>
